@@ -68,6 +68,11 @@ String powerOffFormattedTime; // Відформатований час відк�
 String powerOnFormattedTime; // Відформатований час появи світла (дд.мм.рррр чч:хх:сс)
 String lastMissMessage; // Змінна у якій лежить сформоване повідомлення про появу світла(якщо wifi мережа була відсутня)
 
+// Попередні оголошення функцій, потрібні для коректної компіляції Arduino/ESP32.
+// Без цього препроцесор Arduino може не створити прототипи для функцій з const String&.
+bool hasGroupChat();
+bool sendNotification(const String &message, const String &parseMode);
+
 // HTML код розмітки WEB Інтерфейсу
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE HTML><html><head>
