@@ -1,4 +1,4 @@
-/* Light-Watcher firmware V1.5
+/* Light-Watcher firmware V1.6
 Repository: https://github.com/Stanislav-developer/Light_Watcher
 Author: Stanislav Turii (GitHub: https://github.com/Stanislav-developer || Youtube: https://www.youtube.com/@TehnoMaisterna)
 Date: 2026.02.13
@@ -86,7 +86,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     p { margin: 5px 0; font-weight: bold; }
   </style>
 </head><body>
-  <div class="header"><h1>Light Watcher V1.5</h1></div>
+  <div class="header"><h1>Light Watcher V1.6</h1></div>
   <div class="container">
     <h3>Налаштування пристрою</h3>
     <h4>Будь ласка, коректно введіть усі дані!</h4>
@@ -211,10 +211,9 @@ void checkWiFi() {
 
     // Перевірка: якщо у нас є пропущене повідомлення під час того як WiFi був відсутній
     if (missMessage) {
-      bool ok1 = bot.sendMessage(chatId, lastMissMessage, "HTML"); //Записуємо true якщо повідомлення надіслалось успішно
-      bool ok2 = bot.sendMessage(groupId, lastMissMessage, "HTML"); //Записуємо true якщо повідомлення надіслалось успішно
+      bool ok = sendNotification(lastMissMessage, "HTML"); //Записуємо true якщо повідомлення надіслалось успішно
 
-      if (ok1 || ok2) {
+      if (ok) {
         missMessage = false; // Скидаємо прапорець, щоб знову не надсилати це повідомлення
         Serial.println("Повідомлення про відновлення надіслано (із затримкою)");
       } 
@@ -252,45 +251,133 @@ void launchWebServer() {
     }
 }
 
-// Функція обробки вхідних повідомлень
-void handleNewMessages() {
-  String chat_id = String(bot.messages[0].chat_id); // Отримуємо chatID користувача або групи
-  String text = bot.messages[0].text; // Отримуємо текст повідомлення
-  String from_name = bot.messages[0].from_name; // Отримуємо ім'я користувача
-  
-  Serial.println("Отримано: " + text + " від " + from_name + " ID: " + chat_id);
 
-  //Повідомлення "Світло є чи нема?" публічне.
-  if((chat_id == chatId || chat_id == groupId) && text == "Світло є чи нема?"){
-    if(checkPowerStatus()){
-      String ask_message = "🟢 <b>СВІТЛО Є!</b>\n\n";
-      ask_message += "🕐 Час відновлення: " + powerOnFormattedTime + "\n";
-      bot.sendMessage(chat_id, ask_message, "HTML");
-    }
-    else{
-      String ask_message = "🔴 <b>СВІТЛА НЕМАЄ</b>\n\n";
-      ask_message += "⏱ Тривалість відключення: " + formatDuration(time(&currentTimestamp) - powerOffTimestamp) + "\n";
-      ask_message += "🕐 Час відключення: " + powerOffFormattedTime;
-      bot.sendMessage(chat_id, ask_message, "HTML");
-    }
+// Перевірка, чи налаштовано груповий чат
+bool hasGroupChat() {
+  return groupId.length() > 0 && groupId != "1";
+}
+
+// Надсилання повідомлення власнику та, якщо налаштовано, у групу
+bool sendNotification(const String &message, const String &parseMode) {
+  bool ownerOk = false;
+  bool groupOk = false;
+
+  if (chatId.length() > 0 && chatId != "1") {
+    ownerOk = bot.sendMessage(chatId, message, parseMode);
   }
 
-  // Приватні повідомлення, може писати тільки власник бота.
-  if (chat_id == chatId && text != "Світло є чи нема?") {
-    if (text == "/help") {
-      String help_message = "👋 Привіт, " + from_name + "!\n\n";
-      help_message += "Доступні команди:\n";
-      help_message += "/info - Про бота\n";
-      help_message += "/status - Стан системи\n";
-      help_message += "/set_summer_time - Встановити літній час\n";
-      help_message += "/set_winter_time - Встановити зимовий час\n";
-      help_message += "/clear_data  - Очистити данні конфігураціїї та статистику\n";
-      help_message += "/restart - Віддалений перезапуск бота";
-      bot.sendMessage(chat_id, help_message, "");
+  if (hasGroupChat()) {
+    groupOk = bot.sendMessage(groupId, message, parseMode);
+  }
+
+  return ownerOk || groupOk;
+}
+
+// Дозволяємо службові команди тільки власнику. У групі перевіряємо Telegram ID автора.
+bool isOwnerMessage(const String &chat_id, const String &from_id) {
+  return chat_id == chatId || from_id == chatId;
+}
+
+// Перевірка, чи чат має право питати публічний статус
+bool isAllowedStatusChat(const String &chat_id) {
+  return chat_id == chatId || (hasGroupChat() && chat_id == groupId);
+}
+
+String getCommandName(const String &text) {
+  int spaceIndex = text.indexOf(' ');
+  String command = spaceIndex >= 0 ? text.substring(0, spaceIndex) : text;
+  int botNameIndex = command.indexOf('@');
+
+  if (botNameIndex >= 0) {
+    command = command.substring(0, botNameIndex);
+  }
+
+  return command;
+}
+
+String getCommandArgument(const String &text) {
+  int spaceIndex = text.indexOf(' ');
+  if (spaceIndex < 0) {
+    return "";
+  }
+
+  String argument = text.substring(spaceIndex + 1);
+  argument.trim();
+  return argument;
+}
+
+// Функція обробки вхідних повідомлень
+void handleNewMessages(int newMessageCount) {
+  for (int i = 0; i < newMessageCount; i++) {
+    String chat_id = String(bot.messages[i].chat_id); // Отримуємо chatID користувача або групи
+    String text = bot.messages[i].text; // Отримуємо текст повідомлення
+    String from_name = bot.messages[i].from_name; // Отримуємо ім'я користувача
+    String from_id = String(bot.messages[i].from_id); // Telegram ID автора повідомлення
+    String command = getCommandName(text);
+
+    Serial.println("Отримано: " + text + " від " + from_name + " ID: " + chat_id + " user: " + from_id);
+
+    // Повідомлення "Світло є чи нема?" публічне для власника та збереженої групи.
+    if (isAllowedStatusChat(chat_id) && text == "Світло є чи нема?") {
+      if (checkPowerStatus()) {
+        String ask_message = "🟢 <b>СВІТЛО Є!</b>\n\n";
+        ask_message += "🕐 Час відновлення: " + powerOnFormattedTime + "\n";
+        bot.sendMessage(chat_id, ask_message, "HTML");
+      }
+      else {
+        String ask_message = "🔴 <b>СВІТЛА НЕМАЄ</b>\n\n";
+        ask_message += "⏱ Тривалість відключення: " + formatDuration(time(&currentTimestamp) - powerOffTimestamp) + "\n";
+        ask_message += "🕐 Час відключення: " + powerOffFormattedTime;
+        bot.sendMessage(chat_id, ask_message, "HTML");
+      }
+      continue;
     }
-    
-    else if (text == "/info") {
-      String info = "⚡ <b>Light Watcher</b> v1.5\n\n";
+
+    // Адмін-команди може виконувати тільки власник бота, навіть якщо команда написана в групі.
+    if (isOwnerMessage(chat_id, from_id) && text != "Світло є чи нема?") {
+      if (command == "/help" || command == "/start") {
+        String help_message = "👋 Привіт, " + from_name + "!\n\n";
+        help_message += "Доступні команди:\n";
+        help_message += "/info - Про бота\n";
+        help_message += "/status - Стан системи\n";
+        help_message += "/set_group <chat_id> - Зберегти ID групи вручну\n";
+        help_message += "/set_this_group - Зберегти поточну групу для сповіщень\n";
+        help_message += "/remove_group - Видалити групу зі сповіщень\n";
+        help_message += "/set_summer_time - Встановити літній час\n";
+        help_message += "/set_winter_time - Встановити зимовий час\n";
+        help_message += "/clear_data - Очистити дані конфігурації та статистику\n";
+        help_message += "/restart - Віддалений перезапуск бота";
+        bot.sendMessage(chat_id, help_message, "");
+      }
+      else if (command == "/set_group") {
+        String newGroupId = getCommandArgument(text);
+        if (newGroupId.length() == 0) {
+          bot.sendMessage(chat_id, "Вкажіть ID групи: /set_group -1001234567890", "");
+        }
+        else {
+          groupId = newGroupId;
+          preferences.putString("groupId", groupId);
+          bot.sendMessage(chat_id, "✅ Групу збережено: " + groupId, "");
+        }
+      }
+      else if (command == "/set_this_group") {
+        if (chat_id == chatId) {
+          bot.sendMessage(chat_id, "Цю команду потрібно написати в потрібній групі.", "");
+        }
+        else {
+          groupId = chat_id;
+          preferences.putString("groupId", groupId);
+          bot.sendMessage(chat_id, "✅ Цю групу додано для сповіщень Light Watcher.", "");
+          bot.sendMessage(chatId, "✅ Групу збережено: " + groupId, "");
+        }
+      }
+      else if (command == "/remove_group") {
+        groupId = "";
+        preferences.putString("groupId", groupId);
+        bot.sendMessage(chat_id, "✅ Групу видалено зі сповіщень.", "");
+      }
+      else if (command == "/info") {
+      String info = "⚡ <b>Light Watcher</b> v1.6\n\n";
       info += "<b>Автоматичний моніторинг електромережі</b>\n\n";
       
       info += "🤖 Що робить бот:\n";
@@ -304,7 +391,7 @@ void handleNewMessages() {
       bot.sendMessage(chat_id, info, "HTML");
     }
     
-    else if (text == "/status") {
+      else if (command == "/status") {
       String status_message = "Стан системи: \n";
       if (checkPowerStatus()){
         status_message += "Електромережа: присутня\n";
@@ -326,7 +413,7 @@ void handleNewMessages() {
       bot.sendMessage(chat_id, status_message, "");
     }
     
-    else if (text == "/set_summer_time") {
+      else if (command == "/set_summer_time") {
       currentTZ = "EEST-3";
       preferences.putString("tz-rule", currentTZ);
       applyTimezone(currentTZ);
@@ -334,7 +421,7 @@ void handleNewMessages() {
       bot.sendMessage(chat_id, set_summer_time_msg, "");
     }
 
-    else if (text == "/set_winter_time") {
+      else if (command == "/set_winter_time") {
       currentTZ = "EEST-2";
       preferences.putString("tz-rule", currentTZ);
       applyTimezone(currentTZ);
@@ -342,7 +429,7 @@ void handleNewMessages() {
       bot.sendMessage(chat_id, set_winter_time_msg, "");
     }
     
-    else if (text == "/clear_data") {
+      else if (command == "/clear_data") {
       preferences.clear(); // Очищення даних у енергонезалежній пам'яті
       // Записуємо 1 як дефолтне значення
       preferences.putString("ssid", "1");
@@ -356,14 +443,15 @@ void handleNewMessages() {
       ESP.restart(); 
     }
     
-    else if (text == "/restart") {
+      else if (command == "/restart") {
       bot.sendMessage(chat_id, "Перезапуск...", "");
       delay(1000);
       ESP.restart(); // Кидаємо ESP32 у reset
     }
     
-    else {
+      else {
       bot.sendMessage(chat_id, "❓ Невідома команда. Список команд: /help", "");
+    }
     }
   }
 }
@@ -489,8 +577,7 @@ void setup() {
     lastOutageDetect = false;
     preferences.putBool("lastUotDetect", lastOutageDetect);
     
-    bot.sendMessage(chatId, message, "HTML");
-    bot.sendMessage(groupId, message, "HTML");
+    sendNotification(message, "HTML");
     Serial.println("Повідомлення про відновлення надіслано");
   } 
 
@@ -552,8 +639,7 @@ void loop() {
     String message = "🔴 <b>СВІТЛО ВИМКНУЛИ</b>\n\n";
     message += "🕐 Час відключення: " + getFormattedTime() + "\n";
     
-    bot.sendMessage(chatId, message, "HTML"); //Відсилаємо повідомлення у бота
-    bot.sendMessage(groupId, message, "HTML"); //Відсилаємо повідомлення у групу
+    sendNotification(message, "HTML"); // Відсилаємо повідомлення власнику та у збережену групу
     Serial.println("Повідомлення про відключення надіслано");
   }
   
@@ -583,8 +669,7 @@ void loop() {
       Serial.println("Повідомлення про відновлення не надіслано");
     } 
     else{
-      bot.sendMessage(chatId, message, "HTML");
-      bot.sendMessage(groupId, message, "HTML");
+      sendNotification(message, "HTML");
       Serial.println("Повідомлення про відновлення надіслано");
     }
   }
@@ -593,11 +678,11 @@ void loop() {
 
   // Перевіряємо наявність нових повідомлень кожну секунду
   if (millis() - lastBotCheck > 1000) {
-    int newMessage = bot.getUpdates(-1); // Читаємо тільки останнє надіслане повідомлння з черги
+    int newMessage = bot.getUpdates(bot.last_message_received + 1); // Читаємо всі нові повідомлення з черги
     
     // Якщо повідомлення є, відсилаємо його на обробку
     if (newMessage) {
-      handleNewMessages();
+      handleNewMessages(newMessage);
     }
     
     lastBotCheck = millis();
@@ -608,12 +693,18 @@ void loop() {
 ІСТОРІЯ ВЕРСІЙ:
 v1.0 (25.01.2026) - Базовий функціонал.
 v1.5 (13.02.2026) - WEB Інтерфейс, функція відкладених повідомлень.
+v1.6 (11.08.2026) - Адмін-команди для керування групою через Telegram.
 
 v1.5 (13.02.2026)
 - [NEW] Web-інтерфейс для налаштування (WiFi, Token, ChatID) без перепрошивки.
 - [NEW] Режим "Точка доступу" (AP) при першому запуску або відсутності конфігурації.
 - [FIX] Система відкладених повідомлень: сповіщення про відновлення світла надсилається після підключення до WiFi (актуально, коли роутер довго вантажиться).
 - [NEW] Функція скидання до заводських налаштувань (утримання кнопки BOOT при старті).
+
+v1.6 (11.08.2026)
+- [NEW] Команди /set_group, /set_this_group і /remove_group для керування груповим чатом без зміни коду або Web-інтерфейсу.
+- [FIX] Бот обробляє всі нові Telegram-повідомлення з черги, а не тільки одне останнє.
+- [FIX] Сповіщення у групу надсилаються тільки якщо Group ID справді налаштовано.
 
 TO DO:
 1. Забезпечити стабільну роботу коду(якщо роутер перезавантажується при відключеннях світла)
