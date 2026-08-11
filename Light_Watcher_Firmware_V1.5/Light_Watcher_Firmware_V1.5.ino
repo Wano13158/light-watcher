@@ -73,6 +73,8 @@ time_t powerOffTimestamp = 0; // Unix timestamp відключення (секу
 time_t powerOnTimestamp = 0; // Unix timestamp появи світла (секунди з 1970)
 time_t currentTimestamp = 0; // Поточний Unix timestamp для розрахунків
 
+const char* timezoneKey = "timezone"; // Ключ для збереження часового поясу в Preferences
+const char* legacyTimezoneKey = "tz-rule"; // Старий ключ для міграції попередніх версій
 String currentTZ = ""; // Поточний часовий пояс (EEST-2 або EEST-3)
 String powerOffFormattedTime; // Відформатований час відключення (дд.мм.рррр чч:хх:сс)
 String powerOnFormattedTime; // Відформатований час появи світла (дд.мм.рррр чч:хх:сс)
@@ -169,6 +171,29 @@ void applyTimezone(String tz) {
   setenv("TZ", tz.c_str(), 1); // Встановлюємо часовий пояс у системі (конвертуємо String → const char*)
   tzset(); // Застосовуємо зміни часового поясу
   currentTZ = tz; // Зберігаємо поточний часовий пояс
+}
+
+String loadTimezone() {
+  String savedTZ = preferences.getString(timezoneKey, "");
+
+  if (savedTZ.length() == 0) {
+    savedTZ = preferences.getString(legacyTimezoneKey, "");
+    if (savedTZ.length() > 0) {
+      preferences.putString(timezoneKey, savedTZ); // Міграція зі старого ключа
+    }
+  }
+
+  if (savedTZ != "EEST-3" && savedTZ != "EEST-2") {
+    savedTZ = "EEST-2";
+  }
+
+  return savedTZ;
+}
+
+bool saveTimezone(String tz) {
+  size_t written = preferences.putString(timezoneKey, tz);
+  preferences.putString(legacyTimezoneKey, tz); // Залишаємо сумісність зі старими прошивками
+  return written == tz.length();
 }
 
 // Конвертація секунд Unix timestamp у кількість днів, годин, хвилин.
@@ -321,6 +346,25 @@ String getCommandArgument(const String &text) {
   return argument;
 }
 
+
+void flushPendingTelegramUpdates() {
+  int newMessageCount = bot.getUpdates(bot.last_message_received + 1);
+
+  while (newMessageCount > 0) {
+    long lastUpdateId = bot.messages[0].update_id;
+
+    for (int i = 1; i < newMessageCount; i++) {
+      if (bot.messages[i].update_id > lastUpdateId) {
+        lastUpdateId = bot.messages[i].update_id;
+      }
+    }
+
+    bot.last_message_received = lastUpdateId;
+    newMessageCount = bot.getUpdates(bot.last_message_received + 1);
+    yield();
+  }
+}
+
 // Функція обробки вхідних повідомлень
 void handleNewMessages(int newMessageCount) {
   for (int i = 0; i < newMessageCount; i++) {
@@ -435,7 +479,10 @@ void handleNewMessages(int newMessageCount) {
     
       else if (command == "/set_summer_time") {
       currentTZ = "EEST-3";
-      preferences.putString("tz-rule", currentTZ);
+      if (!saveTimezone(currentTZ)) {
+        bot.sendMessage(chat_id, "⚠️ Не вдалося зберегти часовий пояс. Спробуйте ще раз.", "");
+        continue;
+      }
       applyTimezone(currentTZ);
       String set_summer_time_msg = "Встановлено літній час(UTC+3)";
       bot.sendMessage(chat_id, set_summer_time_msg, "");
@@ -443,7 +490,10 @@ void handleNewMessages(int newMessageCount) {
 
       else if (command == "/set_winter_time") {
       currentTZ = "EEST-2";
-      preferences.putString("tz-rule", currentTZ);
+      if (!saveTimezone(currentTZ)) {
+        bot.sendMessage(chat_id, "⚠️ Не вдалося зберегти часовий пояс. Спробуйте ще раз.", "");
+        continue;
+      }
       applyTimezone(currentTZ);
       String set_winter_time_msg = "Встановлено зимовий час (UTC+2)";
       bot.sendMessage(chat_id, set_winter_time_msg, "");
@@ -519,7 +569,7 @@ void setup() {
 
   // Завантажуємо збережені дані змінних з енергонезалежної пам'яті
   powerOutageCount = preferences.getInt("powerOutageCnt", 0);
-  currentTZ = preferences.getString("tz-rule", "EEST-2");
+  currentTZ = loadTimezone();
   powerOffTimestamp = preferences.getLong64("pwrOffTmstmp", 0);
   lastOutageDetect = preferences.getBool("lastUotDetect", false);
 
@@ -634,11 +684,8 @@ void setup() {
     }
   }
 
-  // Щоб бот не відповідав на всі попередні повідомлення, чистимо чергу
-  int newMessage = bot.getUpdates(-1);
-  if (newMessage > 0) {
-    bot.last_message_received = bot.messages[0].update_id;
-  }
+  // Щоб бот після рестарту не відповідав на старі повідомлення з приватного чату або групи, чистимо всю чергу
+  flushPendingTelegramUpdates();
 }
 
 // Головна функція у якій код виконується постійно
