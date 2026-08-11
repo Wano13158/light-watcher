@@ -41,6 +41,9 @@ IoT, Home Automation, Battery Backup, Light Monitoring, Електрика, Св
 ```
 /info - Про бота
 /status - Стан системи
+/set_group <chat_id> - Додати або змінити групу вручну
+/set_this_group - Додати поточну групу для сповіщень
+/remove_group - Видалити групу зі сповіщень
 /set_summer_time - Встановити літній час
 /set_winter_time - Встановити зимовий час
 /clear_data - Очистити статистику
@@ -48,6 +51,17 @@ IoT, Home Automation, Battery Backup, Light Monitoring, Електрика, Св
 ```
 
 Також бот вміє реагувати на запитання: "Світло є чи нема?"
+
+### Адміністрування групи через Telegram
+
+Групу більше не обов'язково прописувати в коді або Web-інтерфейсі. Власник бота може керувати нею командами:
+
+1. Додайте бота в потрібну Telegram-групу.
+2. Напишіть у цій групі `/set_this_group` зі свого акаунта власника — бот збереже Chat ID групи у пам'ять ESP32.
+3. Якщо ID групи вже відомий, його можна задати вручну в приватному чаті з ботом: `/set_group -1001234567890`.
+4. Щоб вимкнути групові сповіщення, використайте `/remove_group`.
+
+Адмін-команди приймаються тільки від власника, Chat ID якого вказано під час першого налаштування.
 
 ## Налаштування Telegram бота
 
@@ -79,7 +93,7 @@ IoT, Home Automation, Battery Backup, Light Monitoring, Електрика, Св
 ## Прошивка
 
 ### Вихідний код
-Остання версія прошивки `V1.5`: [`Light_Watcher_Firmware_V1.5.ino`](Light_Watcher_Firmware_V1.5/Light_Watcher_Firmware_V1.5.ino)
+Остання версія прошивки `V1.6`: [`Light_Watcher_Firmware_V1.5.ino`](Light_Watcher_Firmware_V1.5/Light_Watcher_Firmware_V1.5.ino)
 Зміни тільки у коді, жодних змін в залізі чи інших частинах немає, тому рекомендую прошивати саме її
 [Детально про зміни](https://github.com/Stanislav-developer/Light_Watcher/releases/tag/v1.5)
 
