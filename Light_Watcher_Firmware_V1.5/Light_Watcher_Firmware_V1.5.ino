@@ -322,12 +322,17 @@ void handleNewMessages(int newMessageCount) {
       if (checkPowerStatus()) {
         String ask_message = "🟢 <b>СВІТЛО Є!</b>\n\n";
         ask_message += "🕐 Час відновлення: " + powerOnFormattedTime + "\n";
+        if (powerOnTimestamp > 0) {
+          ask_message += "⏱ Світло є: " + formatDuration(time(&currentTimestamp) - powerOnTimestamp) + "\n";
+        }
         bot.sendMessage(chat_id, ask_message, "HTML");
       }
       else {
         String ask_message = "🔴 <b>СВІТЛА НЕМАЄ</b>\n\n";
-        ask_message += "⏱ Тривалість відключення: " + formatDuration(time(&currentTimestamp) - powerOffTimestamp) + "\n";
-        ask_message += "🕐 Час відключення: " + powerOffFormattedTime;
+        ask_message += "🕐 Час відключення: " + powerOffFormattedTime + "\n";
+        if (powerOffTimestamp > 0) {
+          ask_message += "⏱ Світла немає: " + formatDuration(time(&currentTimestamp) - powerOffTimestamp) + "\n";
+        }
         bot.sendMessage(chat_id, ask_message, "HTML");
       }
       continue;
@@ -591,9 +596,18 @@ void setup() {
     } 
     else {
       startMessage += "<b>ВІДСУТНЯ</b> ⚠️\n";
-      startMessage += "⚠️ Пристрій запущено на резервному живленні";
+      startMessage += "⚠️ Пристрій запущено на резервному живленні\n";
       powerOffTime = millis();
+      time(&powerOffTimestamp);
+      preferences.putLong64("pwrOffTmstmp", (int64_t)powerOffTimestamp);
+      powerOffFormattedTime = getFormattedTime();
+      lastOutageDetect = true;
+      preferences.putBool("lastUotDetect", lastOutageDetect);
+      powerOutageCount++;
+      preferences.putInt("powerOutageCnt", powerOutageCount);
       messageFlag = true;
+      startMessage += "🕐 Час відключення: " + powerOffFormattedTime + "\n";
+      startMessage += "⏱ Світла немає: " + formatDuration(0) + "\n";
     }
     
     if(bot.sendMessage(chatId, startMessage, "HTML")){
@@ -637,7 +651,8 @@ void loop() {
     preferences.putInt("powerOutageCnt", powerOutageCount); 
 
     String message = "🔴 <b>СВІТЛО ВИМКНУЛИ</b>\n\n";
-    message += "🕐 Час відключення: " + getFormattedTime() + "\n";
+    message += "🕐 Час відключення: " + powerOffFormattedTime + "\n";
+    message += "⏱ Світла немає: " + formatDuration(0) + "\n";
     
     sendNotification(message, "HTML"); // Відсилаємо повідомлення власнику та у збережену групу
     Serial.println("Повідомлення про відключення надіслано");
