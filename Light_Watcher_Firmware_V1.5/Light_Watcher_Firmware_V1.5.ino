@@ -1,4 +1,4 @@
-/* Light-Watcher firmware V1.6
+/* Light-Watcher firmware V1.6.2
 Repository: https://github.com/Stanislav-developer/Light_Watcher
 Author: Stanislav Turii (GitHub: https://github.com/Stanislav-developer || Youtube: https://www.youtube.com/@TehnoMaisterna)
 Date: 2026.02.13
@@ -101,7 +101,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     p { margin: 5px 0; font-weight: bold; }
   </style>
 </head><body>
-  <div class="header"><h1>Light Watcher V1.6</h1></div>
+  <div class="header"><h1>Light Watcher V1.6.2</h1></div>
   <div class="container">
     <h3>Налаштування пристрою</h3>
     <h4>Будь ласка, коректно введіть усі дані!</h4>
@@ -622,7 +622,7 @@ void setup() {
       preferences.putInt("powerOutageCnt", powerOutageCount);
       messageFlag = true;
       startMessage += "🕐 Час відключення: " + powerOffFormattedTime + "\n";
-      startMessage += "⏱ Світла немає: " + formatDuration(0) + "\n";
+      startMessage += "⏱ Відлік часу без світла розпочато\n";
     }
     
     if(bot.sendMessage(chatId, startMessage, "HTML")){
@@ -665,9 +665,14 @@ void loop() {
     powerOutageCount++; // Збільшуємо к-сть вимкнень світла на 1
     preferences.putInt("powerOutageCnt", powerOutageCount); 
 
+    unsigned long durationOnSeconds = 0;
+    if (powerOnTimestamp > 0 && powerOffTimestamp >= powerOnTimestamp) {
+      durationOnSeconds = (unsigned long)(powerOffTimestamp - powerOnTimestamp);
+    }
+
     String message = "🔴 <b>СВІТЛО ВИМКНУЛИ</b>\n\n";
     message += "🕐 Час відключення: " + powerOffFormattedTime + "\n";
-    message += "⏱ Світла немає: " + formatDuration(0) + "\n";
+    message += "⏱ Світло було: " + formatDuration(durationOnSeconds) + "\n";
     
     sendNotification(message, "HTML"); // Відсилаємо повідомлення власнику та у збережену групу
     Serial.println("Повідомлення про відключення надіслано");
@@ -725,6 +730,7 @@ v1.0 (25.01.2026) - Базовий функціонал.
 v1.5 (13.02.2026) - WEB Інтерфейс, функція відкладених повідомлень.
 v1.6 (11.08.2026) - Адмін-команди для керування групою через Telegram.
 v1.6.1 (11.08.2026) - Автовибір GPIO BOOT для ESP32-C3/ESP32, щоб не чіпати SPI flash GPIO9 на класичному ESP32.
+v1.6.2 (11.08.2026) - Повідомлення про вимкнення показує, скільки світло було до відключення, а не завжди 0 сек.
 
 v1.5 (13.02.2026)
 - [NEW] Web-інтерфейс для налаштування (WiFi, Token, ChatID) без перепрошивки.
@@ -739,6 +745,9 @@ v1.6 (11.08.2026)
 
 v1.6.1 (11.08.2026)
 - [FIX] Кнопка BOOT тепер вибирається за цільовим чипом: GPIO9 для ESP32-C3 і GPIO0 для класичного ESP32. Це прибирає reset spam/TG1WDT при прошивці класичних ESP32, де GPIO9 підключений до SPI flash.
+
+v1.6.2 (11.08.2026)
+- [FIX] У повідомленні про вимкнення більше не пише "Світла немає: 0 сек."; тепер воно показує тривалість попереднього періоду зі світлом.
 
 TO DO:
 1. Забезпечити стабільну роботу коду(якщо роутер перезавантажується при відключеннях світла)
